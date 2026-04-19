@@ -1,0 +1,23 @@
+#pragma once
+
+// Copy this file to config.h and fill in your values.
+// config.h is gitignored — never commit it.
+
+// WiFi credentials
+#define WIFI_SSID     "YourNetworkName"
+#define WIFI_PASSWORD "YourPassword"
+
+// OpenAI API
+#define OPENAI_API_KEY   "sk-..."
+#define OPENAI_API_HOST  "api.openai.com"
+#define OPENAI_API_PORT  443
+#define OPENAI_API_PATH  "/v1/chat/completions"
+#define OPENAI_MODEL     "gpt-4o-mini"
+
+// Shake detection tuning
+#define SHAKE_THRESHOLD    1.8f  // g — deviation above 1g gravity to count as motion
+#define SHAKE_DURATION_MS  300   // consecutive ms of motion required to confirm a shake
+#define SHAKE_COOLDOWN_MS  5000  // block re-trigger for this many ms after a shake
+
+// Display timing
+#define MSG_DISPLAY_SECONDS  10
