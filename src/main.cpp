@@ -91,6 +91,12 @@ void loop() {
     M5.update();
     uint32_t now = millis();
 
+    // ---- Global mute toggle (BtnB / side button) ----
+    if (M5.BtnB.wasPressed()) {
+        bool muted = sound.toggleMuted();
+        Serial.printf("[Mute] %s\n", muted ? "ON" : "OFF");
+    }
+
     // ---- State transitions ----
     switch (sm.current()) {
         case AppState::IDLE:
@@ -126,7 +132,7 @@ void loop() {
         }
 
         case AppState::ERROR:
-            if (M5.BtnA.wasPressed() || M5.BtnB.wasPressed()) {
+            if (M5.BtnA.wasPressed()) {
                 WiFi.disconnect(true);
                 setState(AppState::IDLE);
             }

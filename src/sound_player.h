@@ -15,12 +15,17 @@ public:
     void update();              // call every loop tick
     bool playing() const { return _seq != nullptr; }
 
+    void setMuted(bool m);
+    bool toggleMuted();         // returns new muted state
+    bool isMuted() const { return _muted; }
+
 private:
     const Note* _seq     = nullptr;
     size_t      _len     = 0;
     size_t      _idx     = 0;
     uint32_t    _noteStartMs = 0;
     bool        _loop    = false;
+    bool        _muted   = false;
 
     void startNote(size_t i);
 };

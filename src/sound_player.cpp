@@ -10,8 +10,18 @@ void SoundPlayer::begin() {
 void SoundPlayer::startNote(size_t i) {
     _idx = i;
     _noteStartMs = millis();
-    if (_seq[i].freq == 0) M5.Beep.mute();
-    else                   M5.Beep.tone(_seq[i].freq);
+    if (_muted || _seq[i].freq == 0) M5.Beep.mute();
+    else                             M5.Beep.tone(_seq[i].freq);
+}
+
+void SoundPlayer::setMuted(bool m) {
+    _muted = m;
+    if (m) M5.Beep.mute();
+}
+
+bool SoundPlayer::toggleMuted() {
+    setMuted(!_muted);
+    return _muted;
 }
 
 void SoundPlayer::play(const Note* seq, size_t len, bool loop) {
