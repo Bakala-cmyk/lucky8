@@ -12,6 +12,37 @@ public:
     virtual bool done() const { return false; }
 };
 
+// Boot-only menu: A → fortune mode, B → truth mode.
+class ModeSelectAnim : public Animation {
+public:
+    void enter(Renderer&, SoundPlayer&) override;
+    void update(Renderer&, SoundPlayer&, uint32_t) override;
+};
+
+// Slot-machine style Male/Female pick with screen-flash. Auto-advances
+// after the result locks in for a brief celebration.
+class GenderPickAnim : public Animation {
+public:
+    void enter(Renderer&, SoundPlayer&) override;
+    void update(Renderer&, SoundPlayer&, uint32_t) override;
+    bool done() const override { return _done; }
+    bool resultIsMale() const { return _resultMale; }
+    bool locked() const { return _phase == Phase::LOCKED; }
+    void advance() { if (_phase == Phase::LOCKED) _done = true; }
+private:
+    enum class Phase { SPIN, LOCKED };
+    Phase    _phase        = Phase::SPIN;
+    uint32_t _startMs      = 0;
+    uint32_t _lockMs       = 0;
+    uint32_t _lastTickMs   = 0;
+    uint16_t _tickInterval = 60;
+    bool     _showMale     = true;
+    bool     _resultMale   = true;
+    bool     _flashOn      = true;
+    bool     _done         = false;
+    bool     _lockJinglePlayed = false;
+};
+
 class IdleAnim : public Animation {
 public:
     void enter(Renderer&, SoundPlayer&) override;
@@ -59,17 +90,21 @@ private:
 //   EAT:    Pac-Man walks right→left eating each char (waka) and erases
 class DisplayingAnim : public Animation {
 public:
-    DisplayingAnim(const Fortune& f, uint32_t holdSeconds);
+    DisplayingAnim(const Fortune& f);
     void enter(Renderer&, SoundPlayer&) override;
     void update(Renderer&, SoundPlayer&, uint32_t) override;
     bool done() const override { return _phase == Phase::FINISHED; }
-    void skipToEat();   // called if BtnA during TYPING/HOLD
+
+    // BtnA gestures (called from main.cpp).
+    void onShortPress();   // → EAT (works in TYPING/HOLD/SCROLL)
+    void onLongPress();    // → SCROLL (only if overflow, only in HOLD)
+    void setScrollHeld(bool h) { _scrollHeld = h; }
+    bool overflows() const { return _maxScrollY > 0; }
 
 private:
-    enum class Phase { TYPING, HOLD, EAT, FINISHED };
+    enum class Phase { TYPING, HOLD, SCROLL, EAT, FINISHED };
 
     Fortune  _f;
-    uint32_t _holdMs;
     Phase    _phase    = Phase::TYPING;
     uint32_t _phaseStartMs = 0;
 
@@ -93,6 +128,16 @@ private:
     int16_t  _prevLineY = 0;        // y of the line currently being eaten
     float    _pacX   = 0;
     uint32_t _lastEatMs = 0;
+
+    // SCROLL — _scrollY is pixels the content has been moved up.
+    // Visible glyph y on screen = g.y - _scrollY.
+    // After hitting bottom we pause briefly, snap back to top, and loop.
+    int16_t  _scrollY            = 0;
+    int16_t  _maxScrollY         = 0;
+    uint32_t _lastScrollMs       = 0;
+    bool     _scrollPaused       = false;
+    uint32_t _scrollPauseStartMs = 0;
+    bool     _scrollHeld         = false;   // BtnA currently held → progress scroll
 
     void layoutText(Renderer& r);
     void drawAllTyped(Renderer& r);

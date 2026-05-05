@@ -2,8 +2,10 @@
 #include <Arduino.h>
 
 enum class AppState {
+    MODE_SELECT,
     IDLE,
     CONNECTING,
+    GENDER_PICK,
     LOADING,
     DISPLAYING,
     ERROR

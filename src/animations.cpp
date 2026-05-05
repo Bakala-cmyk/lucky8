@@ -11,6 +11,97 @@ static constexpr uint16_t C_BLUE    = 0x001F;
 static constexpr uint16_t C_GREY    = 0x7BEF;
 static constexpr uint16_t C_DARKBLUE= 0x0010;
 
+// =================== ModeSelectAnim ===================
+void ModeSelectAnim::enter(Renderer&, SoundPlayer& s) {
+    s.play(snd::IDLE_WAKA, snd::IDLE_WAKA_LEN, true);
+}
+
+void ModeSelectAnim::update(Renderer& r, SoundPlayer&, uint32_t now) {
+    r.clear(C_BLACK);
+
+    bool blink = ((now / 500) % 2) == 0;
+    if (blink) r.textCentered(8,  "PICK A MODE", C_YELLOW, 2);
+    else       r.textCentered(8,  "PICK A MODE", C_ORANGE, 2);
+
+    // Option A: Fortune (yellow pacman + label)
+    int row1 = 50;
+    r.drawPacman(22, row1 + 6, 9, 0, ((now / 160) % 2) == 0, C_YELLOW);
+    r.text(40, row1, "A:",       C_WHITE, 2);
+    r.text(70, row1, "FORTUNE",  C_YELLOW, 2);
+
+    // Option B: Truth or Dare (pink ghost + label)
+    int row2 = 90;
+    r.drawGhost(22, row2 + 6, 9, C_PINK, C_WHITE, ((now / 250) % 2) ? 0 : 1);
+    r.text(40, row2, "B:",       C_WHITE, 2);
+    r.text(70, row2, "TRUTH",    C_PINK,  2);
+
+    r.textCentered(122, "press a button to pick", C_GREY, 1);
+
+    r.present();
+}
+
+// =================== GenderPickAnim ===================
+void GenderPickAnim::enter(Renderer&, SoundPlayer& s) {
+    _startMs           = millis();
+    _lastTickMs        = _startMs;
+    _tickInterval      = 60;
+    _phase             = Phase::SPIN;
+    _showMale          = (random(0, 2) == 0);
+    _resultMale        = (random(0, 2) == 0);
+    _flashOn           = true;
+    _done              = false;
+    _lockJinglePlayed  = false;
+    s.play(snd::POWER_PELLET, snd::POWER_PELLET_LEN);
+}
+
+void GenderPickAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
+    if (_phase == Phase::SPIN) {
+        if (now - _lastTickMs >= _tickInterval) {
+            _lastTickMs = now;
+            _showMale = !_showMale;
+            _flashOn  = !_flashOn;
+            _tickInterval = (uint16_t)(_tickInterval + 10);  // gentler slowdown
+        }
+        if (_tickInterval > 280 || (now - _startMs) > 4000) {
+            _phase   = Phase::LOCKED;
+            _lockMs  = now;
+            _showMale = _resultMale;
+            _flashOn  = true;
+        }
+    } else { // LOCKED — wait for button press, gentle blink only
+        if (!_lockJinglePlayed) {
+            _lockJinglePlayed = true;
+            s.play(snd::CAUGHT, snd::CAUGHT_LEN);
+        }
+        _flashOn = ((now / 500) % 2) == 0;   // slow, calm
+    }
+
+    uint16_t bg     = _showMale ? C_DARKBLUE : C_PINK;
+    uint16_t accent = _showMale ? C_CYAN     : C_WHITE;
+    if (!_flashOn) bg = C_BLACK;
+
+    r.clear(bg);
+
+    const char* label = _showMale ? "MALE" : "FEMALE";
+    r.textCentered(40, label, accent, 4);
+
+    // Mascot below
+    int my = 100;
+    if (_showMale) r.drawPacman(Renderer::W/2, my, 12, 0, ((now/200)%2)==0, C_YELLOW);
+    else           r.drawCherry(Renderer::W/2, my);
+
+    if (_phase == Phase::LOCKED) {
+        r.textCentered(8, "LOCKED!", C_YELLOW, 2);
+        if (((now / 500) % 2) == 0) {
+            r.textCentered(122, "press A to continue", C_GREY, 1);
+        }
+    } else {
+        r.textCentered(15, "spinning", C_GREY, 1);
+    }
+
+    r.present();
+}
+
 // =================== IdleAnim ===================
 static const uint16_t PAC_COLORS[] = {
     0xFFE0,  // yellow
@@ -208,8 +299,7 @@ void LoadingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
 }
 
 // =================== DisplayingAnim ===================
-DisplayingAnim::DisplayingAnim(const Fortune& f, uint32_t holdSeconds)
-  : _f(f), _holdMs(holdSeconds * 1000UL) {}
+DisplayingAnim::DisplayingAnim(const Fortune& f) : _f(f) {}
 
 void DisplayingAnim::layoutText(Renderer& r) {
     // Use font 1 at size 2 → monospaced 12x16 glyphs. Simpler word-wrap.
@@ -219,31 +309,27 @@ void DisplayingAnim::layoutText(Renderer& r) {
 
     const int charW   = 12;
     const int lineH   = 18;
-    const int maxColW = Renderer::W - 10;      // 5px margin each side
+    const int maxColW = Renderer::W - 10;
     const int startX  = 5;
     const int startY  = 10;
     const int maxCols = maxColW / charW;
 
     _glyphCount = 0;
 
-    // Word-wrap by splitting on spaces.
     const String& s = _f.text;
     int i = 0;
     int curCol = 0;
     int curRow = 0;
     while (i < (int)s.length() && _glyphCount < MAX_GLYPHS) {
-        // collect next word
         int wordStart = i;
         while (i < (int)s.length() && s[i] != ' ' && s[i] != '\n') i++;
         int wordLen = i - wordStart;
         if (wordLen == 0) { i++; continue; }
 
-        // If word doesn't fit on current line and line isn't empty → wrap
         if (curCol != 0 && curCol + wordLen > maxCols) {
             curRow++;
             curCol = 0;
         }
-        // If word itself exceeds maxCols we just overflow — rare for LLM text.
         for (int k = 0; k < wordLen && _glyphCount < MAX_GLYPHS; k++) {
             if (curCol >= maxCols) { curRow++; curCol = 0; }
             Glyph& g = _glyphs[_glyphCount++];
@@ -253,7 +339,6 @@ void DisplayingAnim::layoutText(Renderer& r) {
             g.w = charW;
             curCol++;
         }
-        // trailing space
         if (i < (int)s.length() && s[i] == ' ') {
             if (curCol < maxCols && _glyphCount < MAX_GLYPHS) {
                 Glyph& g = _glyphs[_glyphCount++];
@@ -283,6 +368,16 @@ void DisplayingAnim::enter(Renderer& r, SoundPlayer& s) {
     _prevLineY     = (_glyphCount > 0) ? _glyphs[_glyphCount - 1].y : 0;
     _pacX          = Renderer::W + 12;
     _lastEatMs     = 0;
+    _scrollY            = 0;
+    _lastScrollMs       = 0;
+    _scrollPaused       = false;
+    _scrollPauseStartMs = 0;
+
+    // visible text area: y = 0..textBottomY (above mascot/hint)
+    const int textBottomY = 100;
+    int lastY = (_glyphCount > 0) ? _glyphs[_glyphCount - 1].y : 0;
+    int contentBottom = lastY + 18;     // last glyph bottom (lineH=18)
+    _maxScrollY = (contentBottom > textBottomY) ? (contentBottom - textBottomY) : 0;
 }
 
 void DisplayingAnim::drawAllTyped(Renderer& r) {
@@ -290,8 +385,12 @@ void DisplayingAnim::drawAllTyped(Renderer& r) {
     spr.setTextFont(1);
     spr.setTextSize(2);
     spr.setTextColor(C_WHITE);
+    const int topClip    = -2;
+    const int bottomClip = 100;        // keep text out of mascot/hint band
     for (int i = 0; i < _typedIdx && i < _glyphCount; i++) {
-        spr.setCursor(_glyphs[i].x, _glyphs[i].y);
+        int sy = _glyphs[i].y - _scrollY;
+        if (sy < topClip || sy > bottomClip) continue;
+        spr.setCursor(_glyphs[i].x, sy);
         spr.print(_glyphs[i].c);
     }
 }
@@ -327,14 +426,23 @@ void DisplayingAnim::drawMascot(Renderer& r, uint32_t now) {
     }
 }
 
-void DisplayingAnim::skipToEat() {
-    if (_phase == Phase::TYPING || _phase == Phase::HOLD) {
+void DisplayingAnim::onShortPress() {
+    if (_phase == Phase::TYPING || _phase == Phase::HOLD || _phase == Phase::SCROLL) {
         _phase = Phase::EAT;
         _phaseStartMs = millis();
-        _typedIdx = _glyphCount;  // all text visible before eating
+        _typedIdx = _glyphCount;
         _eatIdx   = _glyphCount - 1;
         _prevLineY = (_glyphCount > 0) ? _glyphs[_glyphCount - 1].y : 0;
         _pacX     = Renderer::W + 12;
+        _lastEatMs = 0;
+    }
+}
+
+void DisplayingAnim::onLongPress() {
+    if (_phase == Phase::HOLD && _maxScrollY > 0) {
+        _phase = Phase::SCROLL;
+        _phaseStartMs = millis();
+        _lastScrollMs = millis();
     }
 }
 
@@ -368,12 +476,31 @@ void DisplayingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
             }
             if (seq) s.play(seq, len);
         }
-        if (now - _typingDoneMs >= _holdMs) {
-            _phase        = Phase::EAT;
-            _phaseStartMs = now;
-            _pacX         = Renderer::W + 12;
-            _eatIdx       = _glyphCount - 1;
-            _lastEatMs    = 0;
+        // No auto-advance; wait for short-press (→ EAT) or long-press (→ SCROLL).
+    }
+
+    if (_phase == Phase::SCROLL) {
+        if (_scrollPaused) {
+            // Hold at bottom for 1s, then snap back to top. Whether scrolling
+            // resumes or stays parked at the top is decided by _scrollHeld.
+            if (now - _scrollPauseStartMs > 1000) {
+                _scrollY      = 0;
+                _scrollPaused = false;
+                _lastScrollMs = now;
+            }
+        } else if (_scrollHeld) {
+            // Only progress while BtnA is held. ~30 px/sec.
+            if (_lastScrollMs == 0) _lastScrollMs = now;
+            float dt = (float)(now - _lastScrollMs);
+            _lastScrollMs = now;
+            _scrollY = (int16_t)(_scrollY + (int)(dt * 0.030f + 0.5f));
+            if (_scrollY >= _maxScrollY) {
+                _scrollY            = _maxScrollY;
+                _scrollPaused       = true;
+                _scrollPauseStartMs = now;
+            }
+        } else {
+            _lastScrollMs = 0;   // pause time tracking when not held
         }
     }
 
@@ -390,6 +517,15 @@ void DisplayingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
         float dt = (_lastEatMs == 0) ? 33.0f : (float)(now - _lastEatMs);
         _lastEatMs = now;
         _pacX -= dt * 0.18f;  // ~180 px/sec → 240/180 ≈ 1.3s per line
+
+        // Auto-scroll to keep the line being eaten on screen.
+        // Target: keep _prevLineY at ~y=40 in visible coords.
+        if (_glyphCount > 0) {
+            int desiredScroll = _prevLineY - 40;
+            if (desiredScroll < 0) desiredScroll = 0;
+            if (desiredScroll > _maxScrollY) desiredScroll = _maxScrollY;
+            _scrollY = (int16_t)desiredScroll;
+        }
 
         // Eat the rightmost remaining char when pac-man passes its right edge,
         // but only if it belongs to the line we're currently traversing.
@@ -409,21 +545,41 @@ void DisplayingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
     // === Draw ===
     r.clear(C_BLACK);
 
-    if (_phase == Phase::TYPING || _phase == Phase::HOLD) {
+    if (_phase == Phase::TYPING || _phase == Phase::HOLD || _phase == Phase::SCROLL) {
         drawAllTyped(r);
-        if (_phase == Phase::HOLD) drawMascot(r, now);
+        if (_phase == Phase::HOLD) {
+            drawMascot(r, now);
+            bool blink = ((now / 500) % 2) == 0;
+            if (blink) {
+                if (_maxScrollY > 0) {
+                    r.text(5, Renderer::H - 12, "hold A: scroll", C_GREY, 1);
+                } else {
+                    r.text(5, Renderer::H - 12, "press A", C_GREY, 1);
+                }
+            }
+        } else if (_phase == Phase::SCROLL) {
+            // mascot still visible while scrolling
+            drawMascot(r, now);
+            if (((now / 500) % 2) == 0) {
+                r.text(5, Renderer::H - 12, "tap A: eat", C_GREY, 1);
+            }
+        }
     } else if (_phase == Phase::EAT) {
-        // redraw still-visible chars (indices 0.._eatIdx inclusive)
+        // redraw still-visible chars (indices 0.._eatIdx inclusive), with scroll offset
         auto& spr = r.sprite();
         spr.setTextFont(1);
         spr.setTextSize(2);
         spr.setTextColor(C_WHITE);
+        const int topClip    = -2;
+        const int bottomClip = 100;
         for (int i = 0; i <= _eatIdx && i < _glyphCount; i++) {
-            spr.setCursor(_glyphs[i].x, _glyphs[i].y);
+            int sy = _glyphs[i].y - _scrollY;
+            if (sy < topClip || sy > bottomClip) continue;
+            spr.setCursor(_glyphs[i].x, sy);
             spr.print(_glyphs[i].c);
         }
-        // pacman moving left; sit on the line currently being eaten
-        int pacY = _prevLineY + 8;
+        // pacman moving left; sit on the line currently being eaten (scrolled)
+        int pacY = (_prevLineY - _scrollY) + 8;
         bool mouthOpen = ((now / 100) % 2) == 0;
         r.drawPacman((int)_pacX, pacY, 9, 1, mouthOpen, C_YELLOW);
     }

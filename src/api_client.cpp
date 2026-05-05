@@ -56,7 +56,8 @@ Mood ApiClient::parseMood(const char* s) {
     return Mood::CALM;
 }
 
-bool ApiClient::fetchFortune(Fortune& out) {
+bool ApiClient::doChat(const char* sysPrompt, const String& userPrompt,
+                       bool expectMood, Fortune& out) {
     WiFiClientSecure wcs;
     wcs.setInsecure();
 
@@ -72,24 +73,18 @@ bool ApiClient::fetchFortune(Fortune& out) {
 
     JsonDocument req;
     req["model"]       = OPENAI_MODEL;
-    req["max_tokens"]  = 80;
-    req["temperature"] = 1.2;   // push variation each call
+    req["max_tokens"]  = 100;
+    req["temperature"] = 1.2;
     JsonObject rf = req["response_format"].to<JsonObject>();
     rf["type"] = "json_object";
 
     JsonArray messages = req["messages"].to<JsonArray>();
     JsonObject sys = messages.add<JsonObject>();
     sys["role"]    = "system";
-    sys["content"] =
-        "You are a fortune-teller life coach for an arcade-style oracle device. "
-        "Return STRICT JSON only, no markdown, no code fences, no extra text. "
-        "Schema: {\"mood\":\"<one of: lucky, warning, calm, bold, love>\",\"text\":\"<one motivational sentence, max 18 words, no quotes>\"}. "
-        "Pick mood to match the vibe of the text. Keep text vivid and poetic. "
-        "Each call must produce a FRESH, DIFFERENT sentence — never repeat phrasing, "
-        "imagery, or themes from generic fortune-cookie templates. Surprise the reader.";
+    sys["content"] = sysPrompt;
     JsonObject usr = messages.add<JsonObject>();
     usr["role"]    = "user";
-    usr["content"] = buildUserPrompt();
+    usr["content"] = userPrompt;
 
     String body;
     serializeJson(req, body);
@@ -118,11 +113,10 @@ bool ApiClient::fetchFortune(Fortune& out) {
     if (err) {
         Serial.printf("[API] inner JSON parse error: %s — falling back to raw text\n", err.c_str());
         out.text = String(content);
-        out.mood = Mood::CALM;
         return out.text.length() > 0;
     }
 
-    out.mood = parseMood(inner["mood"] | "calm");
+    if (expectMood) out.mood = parseMood(inner["mood"] | "calm");
     const char* txt = inner["text"] | "";
     out.text = String(txt);
     out.text.trim();
@@ -130,4 +124,34 @@ bool ApiClient::fetchFortune(Fortune& out) {
 
     Serial.printf("[API] mood=%d text=%s\n", (int)out.mood, out.text.c_str());
     return true;
+}
+
+bool ApiClient::fetchFortune(Fortune& out) {
+    const char* sys =
+        "You are a fortune-teller life coach for an arcade-style oracle device. "
+        "Return STRICT JSON only, no markdown, no code fences, no extra text. "
+        "Schema: {\"mood\":\"<one of: lucky, warning, calm, bold, love>\",\"text\":\"<one motivational sentence, max 18 words, no quotes>\"}. "
+        "Pick mood to match the vibe of the text. Keep text vivid and poetic. "
+        "Each call must produce a FRESH, DIFFERENT sentence — never repeat phrasing, "
+        "imagery, or themes from generic fortune-cookie templates. Surprise the reader.";
+    return doChat(sys, buildUserPrompt(), /*expectMood=*/true, out);
+}
+
+bool ApiClient::fetchTruthQuestion(bool isMale, Fortune& out) {
+    const char* sys =
+        "You generate Truth-or-Dare questions for a portable arcade device, "
+        "but ONLY 'truth' questions (never dare). Return STRICT JSON only, no "
+        "markdown, no code fences, no extra text. Schema: {\"text\":\"<one truth "
+        "question, max 22 words, no quotes>\"}. The question is for casual play "
+        "between male and female friends to warm up conversation — flirty-but-"
+        "respectful is welcome, can be playful or mildly spicy, but never "
+        "explicit/NSFW. Each call must produce a FRESH, DIFFERENT question — "
+        "no clichés, surprise the reader.";
+    String userPrompt = String("The player just spun and got: ") +
+                        (isMale ? "MALE" : "FEMALE") +
+                        ". Ask one truth question tailored to that. [seed:" +
+                        (uint32_t)esp_random() + "]";
+    // Default mascot mood: BOLD for male, LOVE for female.
+    out.mood = isMale ? Mood::BOLD : Mood::LOVE;
+    return doChat(sys, userPrompt, /*expectMood=*/false, out);
 }

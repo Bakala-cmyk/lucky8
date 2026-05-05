@@ -8,6 +8,9 @@
 #include "sound_player.h"
 #include "animations.h"
 
+enum class Mode   { FORTUNE, TRUTH };
+enum class Gender { MALE, FEMALE };
+
 static StateMachine  sm;
 static ShakeDetector shaker;
 static ApiClient     api;
@@ -16,6 +19,8 @@ static SoundPlayer   sound;
 
 static Animation* currentAnim = nullptr;
 static String     lastError;
+static Mode       g_mode   = Mode::FORTUNE;
+static Gender     g_gender = Gender::MALE;
 
 // Worker task plumbing: run WiFi connect / API fetch on core 0
 // so the animation loop on core 1 keeps ticking.
@@ -32,7 +37,9 @@ static void connectTask(void*) {
 
 static void fetchTask(void*) {
     Fortune f;
-    bool ok = api.fetchFortune(f);
+    bool ok = (g_mode == Mode::TRUTH)
+                ? api.fetchTruthQuestion(g_gender == Gender::MALE, f)
+                : api.fetchFortune(f);
     if (ok) workerFortune = f;
     workerResult = ok ? 1 : 0;
     workerHandle = nullptr;
@@ -52,6 +59,9 @@ static void setState(AppState next) {
     sound.stop();
 
     switch (next) {
+        case AppState::MODE_SELECT:
+            currentAnim = new ModeSelectAnim();
+            break;
         case AppState::IDLE:
             currentAnim = new IdleAnim();
             break;
@@ -59,12 +69,15 @@ static void setState(AppState next) {
             currentAnim = new ConnectingAnim();
             startWorker(connectTask, "conn");
             break;
+        case AppState::GENDER_PICK:
+            currentAnim = new GenderPickAnim();
+            break;
         case AppState::LOADING:
             currentAnim = new LoadingAnim();
             startWorker(fetchTask, "fetch");
             break;
         case AppState::DISPLAYING:
-            currentAnim = new DisplayingAnim(workerFortune, MSG_DISPLAY_SECONDS);
+            currentAnim = new DisplayingAnim(workerFortune);
             break;
         case AppState::ERROR:
             currentAnim = new ErrorAnim(lastError);
@@ -83,22 +96,34 @@ void setup() {
     renderer.begin();
     sound.begin();
 
-    setState(AppState::IDLE);
-    Serial.println("[Boot] Ready — shake or press BtnA");
+    setState(AppState::MODE_SELECT);
+    Serial.println("[Boot] Ready — pick mode (A=fortune, B=truth)");
 }
 
 void loop() {
     M5.update();
     uint32_t now = millis();
 
-    // ---- Global mute toggle (BtnB / side button) ----
-    if (M5.BtnB.wasPressed()) {
+    // ---- Global mute toggle (BtnB) — disabled in MODE_SELECT where B picks the mode ----
+    if (sm.current() != AppState::MODE_SELECT && M5.BtnB.wasPressed()) {
         bool muted = sound.toggleMuted();
         Serial.printf("[Mute] %s\n", muted ? "ON" : "OFF");
     }
 
     // ---- State transitions ----
     switch (sm.current()) {
+        case AppState::MODE_SELECT:
+            if (M5.BtnA.wasPressed()) {
+                g_mode = Mode::FORTUNE;
+                Serial.println("[Mode] FORTUNE");
+                setState(AppState::IDLE);
+            } else if (M5.BtnB.wasPressed()) {
+                g_mode = Mode::TRUTH;
+                Serial.println("[Mode] TRUTH");
+                setState(AppState::IDLE);
+            }
+            break;
+
         case AppState::IDLE:
             if (shaker.update() || M5.BtnA.wasPressed()) setState(AppState::CONNECTING);
             break;
@@ -111,7 +136,21 @@ void loop() {
                 setState(AppState::ERROR);
                 break;
             }
-            if (c->readyToAdvance()) setState(AppState::LOADING);
+            if (c->readyToAdvance()) {
+                if (g_mode == Mode::TRUTH) setState(AppState::GENDER_PICK);
+                else                       setState(AppState::LOADING);
+            }
+            break;
+        }
+
+        case AppState::GENDER_PICK: {
+            auto* g = static_cast<GenderPickAnim*>(currentAnim);
+            if (g->locked() && M5.BtnA.wasPressed()) g->advance();
+            if (g->done()) {
+                g_gender = g->resultIsMale() ? Gender::MALE : Gender::FEMALE;
+                Serial.printf("[Gender] %s\n", g->resultIsMale() ? "MALE" : "FEMALE");
+                setState(AppState::LOADING);
+            }
             break;
         }
 
@@ -126,7 +165,29 @@ void loop() {
 
         case AppState::DISPLAYING: {
             auto* d = static_cast<DisplayingAnim*>(currentAnim);
-            if (M5.BtnA.wasPressed()) d->skipToEat();
+            // Report A-held state every frame so SCROLL only progresses while held.
+            d->setScrollHeld(M5.BtnA.isPressed());
+
+            // Self-tracked press timing — robust against frame-poll race that can
+            // happen if the user releases just past the threshold (the M5 pressedFor
+            // poll may miss it between frames and misclassify as a short press).
+            static uint32_t pressStartMs = 0;
+            static bool     aHoldFired   = false;
+            constexpr uint32_t LONG_MS   = 300;
+
+            if (M5.BtnA.wasPressed()) {
+                pressStartMs = now;
+                aHoldFired   = false;
+            }
+            if (M5.BtnA.isPressed() && !aHoldFired && (now - pressStartMs) >= LONG_MS) {
+                aHoldFired = true;
+                d->onLongPress();
+            }
+            if (M5.BtnA.wasReleased()) {
+                uint32_t held = now - pressStartMs;
+                if (held < LONG_MS) d->onShortPress();
+                aHoldFired = false;
+            }
             if (d->done()) { WiFi.disconnect(true); setState(AppState::IDLE); }
             break;
         }
