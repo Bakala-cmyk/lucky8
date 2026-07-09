@@ -5,6 +5,11 @@ enum class Mood : uint8_t {
     LUCKY, WARNING, CALM, BOLD, LOVE
 };
 
+enum class ResponseLanguage : uint8_t {
+    CHINESE,
+    ENGLISH
+};
+
 struct Fortune {
     String text;
     Mood   mood = Mood::CALM;
@@ -15,13 +20,13 @@ public:
     bool connectWiFi();
     // Returns true on success; fills `out`.
     // On parse/network failure, returns false.
-    bool fetchFortune(Fortune& out);
+    bool fetchFortune(ResponseLanguage lang, Fortune& out);
     // Truth-or-Dare (truth only) question for the given gender.
     // Reuses Fortune.text for the question; mood is set to a fitting mascot.
-    bool fetchTruthQuestion(bool isMale, Fortune& out);
+    bool fetchTruthQuestion(bool isMale, ResponseLanguage lang, Fortune& out);
 
 private:
-    String buildUserPrompt();
+    String buildUserPrompt(ResponseLanguage lang);
     Mood   parseMood(const char* s);
     // Shared HTTP/JSON request runner. Returns true and fills out.text/mood
     // on success. If expectMood=false, treats response as {text:"..."} only.

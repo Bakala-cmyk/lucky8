@@ -21,6 +21,7 @@ static Animation* currentAnim = nullptr;
 static String     lastError;
 static Mode       g_mode   = Mode::FORTUNE;
 static Gender     g_gender = Gender::MALE;
+static ResponseLanguage g_lang = ResponseLanguage::CHINESE;
 
 // Worker task plumbing: run WiFi connect / API fetch on core 0
 // so the animation loop on core 1 keeps ticking.
@@ -38,8 +39,8 @@ static void connectTask(void*) {
 static void fetchTask(void*) {
     Fortune f;
     bool ok = (g_mode == Mode::TRUTH)
-                ? api.fetchTruthQuestion(g_gender == Gender::MALE, f)
-                : api.fetchFortune(f);
+                ? api.fetchTruthQuestion(g_gender == Gender::MALE, g_lang, f)
+                : api.fetchFortune(g_lang, f);
     if (ok) workerFortune = f;
     workerResult = ok ? 1 : 0;
     workerHandle = nullptr;
@@ -59,6 +60,9 @@ static void setState(AppState next) {
     sound.stop();
 
     switch (next) {
+        case AppState::LANGUAGE_SELECT:
+            currentAnim = new LanguageSelectAnim();
+            break;
         case AppState::MODE_SELECT:
             currentAnim = new ModeSelectAnim();
             break;
@@ -96,22 +100,38 @@ void setup() {
     renderer.begin();
     sound.begin();
 
-    setState(AppState::MODE_SELECT);
-    Serial.println("[Boot] Ready — pick mode (A=fortune, B=truth)");
+    setState(AppState::LANGUAGE_SELECT);
+    Serial.println("[Boot] Ready — pick language (A=Chinese, B=English)");
 }
 
 void loop() {
     M5.update();
     uint32_t now = millis();
 
-    // ---- Global mute toggle (BtnB) — disabled in MODE_SELECT where B picks the mode ----
-    if (sm.current() != AppState::MODE_SELECT && M5.BtnB.wasPressed()) {
+    // ---- Global mute toggle (BtnB) — disabled in selection screens where B is an option ----
+    if (sm.current() != AppState::LANGUAGE_SELECT &&
+        sm.current() != AppState::MODE_SELECT &&
+        M5.BtnB.wasPressed()) {
         bool muted = sound.toggleMuted();
         Serial.printf("[Mute] %s\n", muted ? "ON" : "OFF");
     }
 
     // ---- State transitions ----
     switch (sm.current()) {
+        case AppState::LANGUAGE_SELECT:
+            if (M5.BtnA.wasPressed()) {
+                g_lang = ResponseLanguage::CHINESE;
+                setAnimationLanguage(g_lang);
+                Serial.println("[Language] CHINESE");
+                setState(AppState::MODE_SELECT);
+            } else if (M5.BtnB.wasPressed()) {
+                g_lang = ResponseLanguage::ENGLISH;
+                setAnimationLanguage(g_lang);
+                Serial.println("[Language] ENGLISH");
+                setState(AppState::MODE_SELECT);
+            }
+            break;
+
         case AppState::MODE_SELECT:
             if (M5.BtnA.wasPressed()) {
                 g_mode = Mode::FORTUNE;
@@ -132,7 +152,7 @@ void loop() {
             auto* c = static_cast<ConnectingAnim*>(currentAnim);
             if (workerResult == 1) c->triggerCaught(sound);
             else if (workerResult == 0) {
-                lastError = "WiFi failed.";
+                lastError = (g_lang == ResponseLanguage::CHINESE) ? "WiFi失败" : "WiFi failed.";
                 setState(AppState::ERROR);
                 break;
             }
@@ -158,7 +178,7 @@ void loop() {
             if (workerResult == 1) {
                 setState(AppState::DISPLAYING);
             } else if (workerResult == 0) {
-                lastError = "API error.";
+                lastError = (g_lang == ResponseLanguage::CHINESE) ? "接口错误" : "API error.";
                 setState(AppState::ERROR);
             }
             break;
@@ -188,14 +208,14 @@ void loop() {
                 if (held < LONG_MS) d->onShortPress();
                 aHoldFired = false;
             }
-            if (d->done()) { WiFi.disconnect(true); setState(AppState::IDLE); }
+            if (d->done()) { WiFi.disconnect(true); setState(AppState::MODE_SELECT); }
             break;
         }
 
         case AppState::ERROR:
             if (M5.BtnA.wasPressed()) {
                 WiFi.disconnect(true);
-                setState(AppState::IDLE);
+                setState(AppState::MODE_SELECT);
             }
             break;
     }

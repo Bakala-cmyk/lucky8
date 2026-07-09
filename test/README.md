@@ -28,8 +28,9 @@
 - [ ] Wrong API key → ERROR screen → BtnA → back to idle
 - [ ] 3 consecutive shake cycles work without reset
 
-## Phase 6 (optional) — Chinese support
-- [ ] Add U8g2_for_TFT_eSPI + wqy12 font to platformio.ini
-- [ ] Hardcoded Chinese string renders on LCD
-- [ ] System prompt changed to request Chinese output
-- [ ] Chinese response wraps correctly at ~20 chars per line
+## Phase 6 — Chinese support
+- [x] Add vendored U8g2_for_TFT_eSPI + WQY 16px GB2312 Chinese font
+- [x] System prompt changed to request Simplified Chinese output
+- [ ] API Chinese response renders on LCD
+- [ ] Chinese / English mixed response wraps correctly
+- [ ] Typewriter, scroll, and eat-text animations handle UTF-8 glyphs correctly

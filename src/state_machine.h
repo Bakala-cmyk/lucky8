@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 enum class AppState {
+    LANGUAGE_SELECT,
     MODE_SELECT,
     IDLE,
     CONNECTING,

@@ -13,6 +13,13 @@ void Renderer::begin() {
     _spr.createSprite(W, H);
     _spr.fillSprite(C_BLACK);
     _spr.setTextWrap(false);
+
+    _u8f.begin(_spr);
+    _u8f.setFont(u8g2_font_wqy16_t_gb2312b);
+    _u8f.setFontMode(1);
+    _u8f.setFontDirection(0);
+    _utf8Ascent = _u8f.getFontAscent();
+    _utf8LineH  = _u8f.getFontAscent() - _u8f.getFontDescent() + 2;
 }
 
 void Renderer::clear(uint16_t color) {
@@ -42,6 +49,73 @@ int16_t Renderer::textWidth(const char* s, uint8_t font) {
 void Renderer::textCentered(int16_t cy, const char* s, uint16_t color, uint8_t font) {
     int16_t w = textWidth(s, font);
     text((W - w) / 2, cy, s, color, font);
+}
+
+static uint8_t utf8Len(uint8_t b) {
+    if ((b & 0x80) == 0x00) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static uint16_t utf8Codepoint(const char* s) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(s);
+    if ((p[0] & 0x80) == 0x00) return p[0];
+    if ((p[0] & 0xE0) == 0xC0) return ((p[0] & 0x1F) << 6) | (p[1] & 0x3F);
+    if ((p[0] & 0xF0) == 0xE0) return ((p[0] & 0x0F) << 12) | ((p[1] & 0x3F) << 6) | (p[2] & 0x3F);
+    return 0;
+}
+
+const uint8_t* Renderer::fontForGlyph(const char* glyph) {
+    uint16_t cp = utf8Codepoint(glyph);
+    _u8f.setFont(u8g2_font_wqy16_t_gb2312b);
+    if (u8g2_IsGlyph(&_u8f.u8g2, cp)) return u8g2_font_wqy16_t_gb2312b;
+
+    return u8g2_font_wqy16_t_gb2312b;
+}
+
+int16_t Renderer::utf8GlyphWidth(const char* glyph) {
+    _u8f.setFont(fontForGlyph(glyph));
+    int16_t w = _u8f.getUTF8Width(glyph);
+    if (w <= 0) w = 16;
+    return w;
+}
+
+void Renderer::utf8Text(int16_t x, int16_t y, const char* s, uint16_t color) {
+    _u8f.setFontMode(1);
+    _u8f.setFontDirection(0);
+    _u8f.setForegroundColor(color);
+
+    int16_t cx = x;
+    for (int i = 0; s[i] != '\0';) {
+        uint8_t len = utf8Len((uint8_t)s[i]);
+        char glyph[5] = {0, 0, 0, 0, 0};
+        for (uint8_t k = 0; k < len && s[i + k] != '\0'; k++) glyph[k] = s[i + k];
+
+        _u8f.setFont(fontForGlyph(glyph));
+        _u8f.setCursor(cx, y + _utf8Ascent);
+        _u8f.print(glyph);
+        cx += utf8GlyphWidth(glyph);
+        i += len;
+    }
+}
+
+void Renderer::utf8TextCentered(int16_t y, const char* s, uint16_t color) {
+    int16_t w = utf8TextWidth(s);
+    utf8Text((W - w) / 2, y, s, color);
+}
+
+int16_t Renderer::utf8TextWidth(const char* s) {
+    int16_t w = 0;
+    for (int i = 0; s[i] != '\0';) {
+        uint8_t len = utf8Len((uint8_t)s[i]);
+        char glyph[5] = {0, 0, 0, 0, 0};
+        for (uint8_t k = 0; k < len && s[i + k] != '\0'; k++) glyph[k] = s[i + k];
+        w += utf8GlyphWidth(glyph);
+        i += len;
+    }
+    return w;
 }
 
 // --- Pac-Man ---

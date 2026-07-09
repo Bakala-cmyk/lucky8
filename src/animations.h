@@ -4,12 +4,22 @@
 #include "sound_player.h"
 #include "api_client.h"
 
+void setAnimationLanguage(ResponseLanguage lang);
+ResponseLanguage animationLanguage();
+
 class Animation {
 public:
     virtual ~Animation() = default;
     virtual void enter(Renderer& r, SoundPlayer& s) = 0;
     virtual void update(Renderer& r, SoundPlayer& s, uint32_t nowMs) = 0;
     virtual bool done() const { return false; }
+};
+
+// Boot-only language menu: A -> Chinese, B -> English.
+class LanguageSelectAnim : public Animation {
+public:
+    void enter(Renderer&, SoundPlayer&) override;
+    void update(Renderer&, SoundPlayer&, uint32_t) override;
 };
 
 // Boot-only menu: A → fortune mode, B → truth mode.
@@ -108,8 +118,14 @@ private:
     Phase    _phase    = Phase::TYPING;
     uint32_t _phaseStartMs = 0;
 
-    // per-char laid out bounding boxes
-    struct Glyph { char c; int16_t x, y; int16_t w; };
+    // One visible UTF-8 glyph or ASCII space with its laid-out bounding box.
+    struct Glyph {
+        char    text[5];
+        uint8_t len;
+        int16_t x, y;
+        int16_t w;
+        bool    whitespace;
+    };
     static constexpr int MAX_GLYPHS = 200;
     Glyph _glyphs[MAX_GLYPHS];
     int   _glyphCount = 0;

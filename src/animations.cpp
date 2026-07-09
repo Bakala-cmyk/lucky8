@@ -1,4 +1,5 @@
 #include "animations.h"
+#include <cstring>
 
 static constexpr uint16_t C_BLACK   = 0x0000;
 static constexpr uint16_t C_WHITE   = 0xFFFF;
@@ -11,6 +12,57 @@ static constexpr uint16_t C_BLUE    = 0x001F;
 static constexpr uint16_t C_GREY    = 0x7BEF;
 static constexpr uint16_t C_DARKBLUE= 0x0010;
 
+static ResponseLanguage g_animLang = ResponseLanguage::CHINESE;
+
+void setAnimationLanguage(ResponseLanguage lang) {
+    g_animLang = lang;
+}
+
+ResponseLanguage animationLanguage() {
+    return g_animLang;
+}
+
+static bool zh() {
+    return g_animLang == ResponseLanguage::CHINESE;
+}
+
+static void label(Renderer& r, int16_t x, int16_t y, const char* cn, const char* en,
+                  uint16_t color, uint8_t font = 2) {
+    if (zh()) r.utf8Text(x, y, cn, color);
+    else      r.text(x, y, en, color, font);
+}
+
+static void labelCentered(Renderer& r, int16_t y, const char* cn, const char* en,
+                          uint16_t color, uint8_t font = 2) {
+    if (zh()) r.utf8TextCentered(y, cn, color);
+    else      r.textCentered(y, en, color, font);
+}
+
+// =================== LanguageSelectAnim ===================
+void LanguageSelectAnim::enter(Renderer&, SoundPlayer& s) {
+    s.play(snd::IDLE_WAKA, snd::IDLE_WAKA_LEN, true);
+}
+
+void LanguageSelectAnim::update(Renderer& r, SoundPlayer&, uint32_t now) {
+    r.clear(C_BLACK);
+
+    bool blink = ((now / 500) % 2) == 0;
+    r.textCentered(8, "PICK LANGUAGE", blink ? C_YELLOW : C_ORANGE, 2);
+
+    int row1 = 50;
+    r.drawPacman(22, row1 + 6, 9, 0, ((now / 160) % 2) == 0, C_YELLOW);
+    r.text(40, row1, "A:", C_WHITE, 2);
+    r.utf8Text(70, row1 - 1, "中文", C_YELLOW);
+
+    int row2 = 90;
+    r.drawGhost(22, row2 + 6, 9, C_CYAN, C_WHITE, ((now / 250) % 2) ? 0 : 1);
+    r.text(40, row2, "B:", C_WHITE, 2);
+    r.text(70, row2, "ENGLISH", C_CYAN, 2);
+
+    r.textCentered(122, "press a button to pick", C_GREY, 1);
+    r.present();
+}
+
 // =================== ModeSelectAnim ===================
 void ModeSelectAnim::enter(Renderer&, SoundPlayer& s) {
     s.play(snd::IDLE_WAKA, snd::IDLE_WAKA_LEN, true);
@@ -20,22 +72,21 @@ void ModeSelectAnim::update(Renderer& r, SoundPlayer&, uint32_t now) {
     r.clear(C_BLACK);
 
     bool blink = ((now / 500) % 2) == 0;
-    if (blink) r.textCentered(8,  "PICK A MODE", C_YELLOW, 2);
-    else       r.textCentered(8,  "PICK A MODE", C_ORANGE, 2);
+    labelCentered(r, 8, "选择模式", "PICK A MODE", blink ? C_YELLOW : C_ORANGE, 2);
 
     // Option A: Fortune (yellow pacman + label)
     int row1 = 50;
     r.drawPacman(22, row1 + 6, 9, 0, ((now / 160) % 2) == 0, C_YELLOW);
     r.text(40, row1, "A:",       C_WHITE, 2);
-    r.text(70, row1, "FORTUNE",  C_YELLOW, 2);
+    label(r, 70, row1, "求签", "FORTUNE", C_YELLOW, 2);
 
     // Option B: Truth or Dare (pink ghost + label)
     int row2 = 90;
     r.drawGhost(22, row2 + 6, 9, C_PINK, C_WHITE, ((now / 250) % 2) ? 0 : 1);
     r.text(40, row2, "B:",       C_WHITE, 2);
-    r.text(70, row2, "TRUTH",    C_PINK,  2);
+    label(r, 70, row2, "真心话", "TRUTH", C_PINK, 2);
 
-    r.textCentered(122, "press a button to pick", C_GREY, 1);
+    labelCentered(r, 122, "按键选择", "press a button to pick", C_GREY, 1);
 
     r.present();
 }
@@ -82,8 +133,11 @@ void GenderPickAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
 
     r.clear(bg);
 
-    const char* label = _showMale ? "MALE" : "FEMALE";
-    r.textCentered(40, label, accent, 4);
+    if (zh()) {
+        r.utf8TextCentered(40, _showMale ? "男生" : "女生", accent);
+    } else {
+        r.textCentered(40, _showMale ? "MALE" : "FEMALE", accent, 4);
+    }
 
     // Mascot below
     int my = 100;
@@ -91,12 +145,12 @@ void GenderPickAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
     else           r.drawCherry(Renderer::W/2, my);
 
     if (_phase == Phase::LOCKED) {
-        r.textCentered(8, "LOCKED!", C_YELLOW, 2);
+        labelCentered(r, 8, "已选中", "LOCKED!", C_YELLOW, 2);
         if (((now / 500) % 2) == 0) {
-            r.textCentered(122, "press A to continue", C_GREY, 1);
+            labelCentered(r, 122, "按A继续", "press A to continue", C_GREY, 1);
         }
     } else {
-        r.textCentered(15, "spinning", C_GREY, 1);
+        labelCentered(r, 15, "抽选中", "spinning", C_GREY, 1);
     }
 
     r.present();
@@ -169,7 +223,7 @@ void IdleAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
 
     // Two alternating lines that together never go both-dark.
     bool topOn = ((now / 500) % 2) == 0;
-    if (topOn) r.textCentered(12, "~ SHAKE ME! ~", C_YELLOW, 2);
+    if (topOn) labelCentered(r, 12, "~ 摇一摇 ~", "~ SHAKE ME! ~", C_YELLOW, 2);
     else       r.textCentered(42, "~ lucky8! ~",   C_CYAN,   2);
 
     // pellets
@@ -228,9 +282,14 @@ void ConnectingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
     // CONNECTING banner centered vertically, slightly above the chase lane
     int dots = (now / 400) % 4;
     char banner[24];
-    snprintf(banner, sizeof(banner), "CONNECTING%s",
-             dots==0?"":(dots==1?".":(dots==2?"..":"...")));
-    r.textCentered(40, banner, C_YELLOW, 2);
+    const char* suffix = dots==0 ? "" : (dots==1 ? "." : (dots==2 ? ".." : "..."));
+    if (zh()) {
+        snprintf(banner, sizeof(banner), "连接中%s", suffix);
+        r.utf8TextCentered(38, banner, C_YELLOW);
+    } else {
+        snprintf(banner, sizeof(banner), "CONNECTING%s", suffix);
+        r.textCentered(40, banner, C_YELLOW, 2);
+    }
 
     // dashed running track
     for (int px = 0; px < Renderer::W; px += 12) {
@@ -282,9 +341,14 @@ void LoadingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
     // banner with marquee dots
     int dots = (now / 400) % 4;
     char banner[32];
-    snprintf(banner, sizeof(banner), "ASKING THE COSMOS%s",
-             dots==0?"":(dots==1?".":(dots==2?"..":"...")));
-    r.textCentered(10, banner, C_CYAN, 2);
+    const char* suffix = dots==0 ? "" : (dots==1 ? "." : (dots==2 ? ".." : "..."));
+    if (zh()) {
+        snprintf(banner, sizeof(banner), "询问宇宙%s", suffix);
+        r.utf8TextCentered(8, banner, C_CYAN);
+    } else {
+        snprintf(banner, sizeof(banner), "ASKING THE COSMOS%s", suffix);
+        r.textCentered(10, banner, C_CYAN, 2);
+    }
 
     // center power pellet — pulsing
     bool pulse = ((now / 150) % 2) == 0;
@@ -301,59 +365,131 @@ void LoadingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
 // =================== DisplayingAnim ===================
 DisplayingAnim::DisplayingAnim(const Fortune& f) : _f(f) {}
 
-void DisplayingAnim::layoutText(Renderer& r) {
-    // Use font 1 at size 2 → monospaced 12x16 glyphs. Simpler word-wrap.
-    auto& spr = r.sprite();
-    spr.setTextFont(1);
-    spr.setTextSize(2);
+static uint8_t utf8GlyphLen(uint8_t b) {
+    if ((b & 0x80) == 0x00) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
 
-    const int charW   = 12;
-    const int lineH   = 18;
-    const int maxColW = Renderer::W - 10;
+static bool isAsciiBreak(char c) {
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+void DisplayingAnim::layoutText(Renderer& r) {
+    const bool chinese = zh();
+    const int lineH   = chinese ? r.utf8LineHeight() : 22;
+    const int maxColW = chinese ? (Renderer::W - 42) : (Renderer::W - 10);
     const int startX  = 5;
-    const int startY  = 10;
-    const int maxCols = maxColW / charW;
+    const int startY  = chinese ? 6 : 8;
 
     _glyphCount = 0;
 
     const String& s = _f.text;
+    const int n = s.length();
     int i = 0;
-    int curCol = 0;
+    int curX = startX;
     int curRow = 0;
-    while (i < (int)s.length() && _glyphCount < MAX_GLYPHS) {
-        int wordStart = i;
-        while (i < (int)s.length() && s[i] != ' ' && s[i] != '\n') i++;
-        int wordLen = i - wordStart;
-        if (wordLen == 0) { i++; continue; }
 
-        if (curCol != 0 && curCol + wordLen > maxCols) {
-            curRow++;
-            curCol = 0;
-        }
-        for (int k = 0; k < wordLen && _glyphCount < MAX_GLYPHS; k++) {
-            if (curCol >= maxCols) { curRow++; curCol = 0; }
-            Glyph& g = _glyphs[_glyphCount++];
-            g.c = s[wordStart + k];
-            g.x = startX + curCol * charW;
-            g.y = startY + curRow * lineH;
-            g.w = charW;
-            curCol++;
-        }
-        if (i < (int)s.length() && s[i] == ' ') {
-            if (curCol < maxCols && _glyphCount < MAX_GLYPHS) {
-                Glyph& g = _glyphs[_glyphCount++];
-                g.c = ' ';
-                g.x = startX + curCol * charW;
-                g.y = startY + curRow * lineH;
-                g.w = charW;
-                curCol++;
+    if (!chinese) {
+        while (i < n && _glyphCount < MAX_GLYPHS) {
+            char first = s[i];
+            if (first == '\n' || first == '\r') {
+                curRow++;
+                curX = startX;
+                i++;
+                continue;
             }
-            i++;
-        } else if (i < (int)s.length() && s[i] == '\n') {
-            curRow++;
-            curCol = 0;
-            i++;
+            if (first == ' ' || first == '\t') {
+                i++;
+                continue;
+            }
+
+            int wordStart = i;
+            int wordW = 0;
+            while (i < n && !isAsciiBreak(s[i])) {
+                char buf[2] = {s[i], 0};
+                int16_t cw = r.textWidth(buf, 2);
+                wordW += (cw > 0) ? cw : 8;
+                i++;
+            }
+
+            if (curX > startX && (curX + wordW) > (startX + maxColW)) {
+                curRow++;
+                curX = startX;
+            }
+
+            for (int k = wordStart; k < i && _glyphCount < MAX_GLYPHS; k++) {
+                char buf[2] = {s[k], 0};
+                int16_t cw = r.textWidth(buf, 2);
+                if (cw <= 0) cw = 8;
+
+                Glyph& g = _glyphs[_glyphCount++];
+                g.text[0] = s[k];
+                g.text[1] = '\0';
+                g.len = 1;
+                g.x = curX;
+                g.y = startY + curRow * lineH;
+                g.w = cw;
+                g.whitespace = false;
+                curX += cw;
+            }
+
+            int spaceW = 6;
+            if (i < n && (s[i] == ' ' || s[i] == '\t') &&
+                curX + spaceW <= startX + maxColW && _glyphCount < MAX_GLYPHS) {
+                Glyph& g = _glyphs[_glyphCount++];
+                g.text[0] = ' ';
+                g.text[1] = '\0';
+                g.len = 1;
+                g.x = curX;
+                g.y = startY + curRow * lineH;
+                g.w = spaceW;
+                g.whitespace = true;
+                curX += spaceW;
+            }
+            while (i < n && (s[i] == ' ' || s[i] == '\t')) i++;
         }
+        return;
+    }
+
+    while (i < n && _glyphCount < MAX_GLYPHS) {
+        char first = s[i];
+        if (first == '\n' || first == '\r') {
+            curRow++;
+            curX = startX;
+            i++;
+            continue;
+        }
+
+        uint8_t len = utf8GlyphLen((uint8_t)first);
+        if (i + len > n) len = 1;
+
+        char buf[5] = {0, 0, 0, 0, 0};
+        for (uint8_t k = 0; k < len; k++) buf[k] = s[i + k];
+
+        bool whitespace = (len == 1 && isAsciiBreak(first));
+        int16_t w = whitespace ? 6 : r.utf8TextWidth(buf);
+        if (w <= 0) w = (len == 1) ? 8 : 16;
+
+        if (!whitespace && curX > startX && (curX + w) > (startX + maxColW)) {
+            curRow++;
+            curX = startX;
+        }
+
+        if (!(whitespace && curX == startX)) {
+            Glyph& g = _glyphs[_glyphCount++];
+            memcpy(g.text, buf, sizeof(g.text));
+            g.len = len;
+            g.x = curX;
+            g.y = startY + curRow * lineH;
+            g.w = w;
+            g.whitespace = whitespace;
+            curX += w;
+        }
+
+        i += len;
     }
 }
 
@@ -376,22 +512,20 @@ void DisplayingAnim::enter(Renderer& r, SoundPlayer& s) {
     // visible text area: y = 0..textBottomY (above mascot/hint)
     const int textBottomY = 100;
     int lastY = (_glyphCount > 0) ? _glyphs[_glyphCount - 1].y : 0;
-    int contentBottom = lastY + 18;     // last glyph bottom (lineH=18)
+    int contentBottom = lastY + (zh() ? r.utf8LineHeight() : 22);
     _maxScrollY = (contentBottom > textBottomY) ? (contentBottom - textBottomY) : 0;
 }
 
 void DisplayingAnim::drawAllTyped(Renderer& r) {
-    auto& spr = r.sprite();
-    spr.setTextFont(1);
-    spr.setTextSize(2);
-    spr.setTextColor(C_WHITE);
     const int topClip    = -2;
     const int bottomClip = 100;        // keep text out of mascot/hint band
     for (int i = 0; i < _typedIdx && i < _glyphCount; i++) {
         int sy = _glyphs[i].y - _scrollY;
         if (sy < topClip || sy > bottomClip) continue;
-        spr.setCursor(_glyphs[i].x, sy);
-        spr.print(_glyphs[i].c);
+        if (!_glyphs[i].whitespace) {
+            if (zh()) r.utf8Text(_glyphs[i].x, sy, _glyphs[i].text, C_WHITE);
+            else      r.text(_glyphs[i].x, sy, _glyphs[i].text, C_WHITE, 2);
+        }
     }
 }
 
@@ -452,7 +586,7 @@ void DisplayingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
         if (now - _lastTypeMs >= 28 && _typedIdx < _glyphCount) {
             _typedIdx++;
             _lastTypeMs = now;
-            if (_glyphs[_typedIdx - 1].c != ' ') {
+            if (!_glyphs[_typedIdx - 1].whitespace) {
                 s.play(snd::TYPE_CLICK, snd::TYPE_CLICK_LEN);
             }
         }
@@ -532,7 +666,7 @@ void DisplayingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
         if (_eatIdx >= 0 && _glyphs[_eatIdx].y == _prevLineY) {
             int eatX = _glyphs[_eatIdx].x + _glyphs[_eatIdx].w;
             if (_pacX <= eatX + 4) {
-                if (_glyphs[_eatIdx].c != ' ') {
+                if (!_glyphs[_eatIdx].whitespace) {
                     s.play(snd::EAT_WAKA, snd::EAT_WAKA_LEN);
                 }
                 _eatIdx--;
@@ -552,31 +686,29 @@ void DisplayingAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
             bool blink = ((now / 500) % 2) == 0;
             if (blink) {
                 if (_maxScrollY > 0) {
-                    r.text(5, Renderer::H - 12, "hold A: scroll", C_GREY, 1);
+                    label(r, 5, Renderer::H - 15, "长按A滚动", "hold A: scroll", C_GREY, 1);
                 } else {
-                    r.text(5, Renderer::H - 12, "press A", C_GREY, 1);
+                    label(r, 5, Renderer::H - 15, "按A吞字", "press A", C_GREY, 1);
                 }
             }
         } else if (_phase == Phase::SCROLL) {
             // mascot still visible while scrolling
             drawMascot(r, now);
             if (((now / 500) % 2) == 0) {
-                r.text(5, Renderer::H - 12, "tap A: eat", C_GREY, 1);
+                label(r, 5, Renderer::H - 15, "点按A吞字", "tap A: eat", C_GREY, 1);
             }
         }
     } else if (_phase == Phase::EAT) {
-        // redraw still-visible chars (indices 0.._eatIdx inclusive), with scroll offset
-        auto& spr = r.sprite();
-        spr.setTextFont(1);
-        spr.setTextSize(2);
-        spr.setTextColor(C_WHITE);
+        // redraw still-visible glyphs (indices 0.._eatIdx inclusive), with scroll offset
         const int topClip    = -2;
         const int bottomClip = 100;
         for (int i = 0; i <= _eatIdx && i < _glyphCount; i++) {
             int sy = _glyphs[i].y - _scrollY;
             if (sy < topClip || sy > bottomClip) continue;
-            spr.setCursor(_glyphs[i].x, sy);
-            spr.print(_glyphs[i].c);
+            if (!_glyphs[i].whitespace) {
+                if (zh()) r.utf8Text(_glyphs[i].x, sy, _glyphs[i].text, C_WHITE);
+                else      r.text(_glyphs[i].x, sy, _glyphs[i].text, C_WHITE, 2);
+            }
         }
         // pacman moving left; sit on the line currently being eaten (scrolled)
         int pacY = (_prevLineY - _scrollY) + 8;
@@ -603,7 +735,7 @@ void ErrorAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
     r.drawDeathFrame(Renderer::W / 2, 45, 14, frame);
 
     if (frame >= 5) {
-        r.textCentered(80, "GAME OVER", C_RED, 2);
+        labelCentered(r, 80, "出错了", "GAME OVER", C_RED, 2);
         if (_msg.length() > 0) {
             // only the first line of the error
             String line = _msg;
@@ -611,7 +743,7 @@ void ErrorAnim::update(Renderer& r, SoundPlayer& s, uint32_t now) {
             if (nl >= 0) line = line.substring(0, nl);
             r.textCentered(100, line.c_str(), C_WHITE, 1);
         }
-        r.textCentered(115, "Press A to retry", C_GREY, 1);
+        labelCentered(r, 115, "按A重试", "Press A to retry", C_GREY, 1);
     }
 
     r.present();

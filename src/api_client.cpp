@@ -18,8 +18,8 @@ bool ApiClient::connectWiFi() {
     return true;
 }
 
-String ApiClient::buildUserPrompt() {
-    const char* prompts[] = {
+String ApiClient::buildUserPrompt(ResponseLanguage lang) {
+    const char* promptsEnglish[] = {
         "Give me today's fortune.",
         "Inspire me for today.",
         "What's my life advice right now?",
@@ -36,7 +36,30 @@ String ApiClient::buildUserPrompt() {
         "Whisper a strange little courage.",
         "Give me one line that hits like lightning.",
     };
-    const int N = sizeof(prompts) / sizeof(prompts[0]);
+
+    const char* promptsChinese[] = {
+        "给我今天的运势。",
+        "给我一句今天的提醒。",
+        "此刻我需要什么人生建议？",
+        "给我一句有力量的短箴言。",
+        "今天适合期待什么？",
+        "告诉我一个宇宙的小秘密。",
+        "分享一句意外但有用的智慧。",
+        "今天我应该记住什么？",
+        "揭示一个能改变心情的小真相。",
+        "此刻的气场是什么？",
+        "给我一条短短的祝福。",
+        "写一句只适合此刻的签文。",
+        "给我一个微小但明确的推动。",
+        "悄悄给我一点奇怪的勇气。",
+        "给我一句像闪电一样击中的话。",
+    };
+
+    const bool chinese = (lang == ResponseLanguage::CHINESE);
+    const char** prompts = chinese ? promptsChinese : promptsEnglish;
+    const int N = chinese
+                    ? (sizeof(promptsChinese) / sizeof(promptsChinese[0]))
+                    : (sizeof(promptsEnglish) / sizeof(promptsEnglish[0]));
     String p = String(prompts[random(0, N)]);
     // Append a random nonce to defeat any server-side response cache and
     // nudge the model toward a different sample each call.
@@ -54,6 +77,37 @@ Mood ApiClient::parseMood(const char* s) {
     else if (!strcasecmp(s, "bold"))    return Mood::BOLD;
     else if (!strcasecmp(s, "love"))    return Mood::LOVE;
     return Mood::CALM;
+}
+
+static void normalizeChinesePunctuation(String& s) {
+    // Keep the rendered charset predictable on the tiny device.
+    s.replace("“", "");
+    s.replace("”", "");
+    s.replace("‘", "");
+    s.replace("’", "");
+    s.replace("「", "");
+    s.replace("」", "");
+    s.replace("『", "");
+    s.replace("』", "");
+    s.replace("《", "");
+    s.replace("》", "");
+    s.replace("【", "");
+    s.replace("】", "");
+    s.replace("（", "(");
+    s.replace("）", ")");
+    s.replace("——", "-");
+    s.replace("—", "-");
+    s.replace("……", "...");
+    s.replace("…", "...");
+    s.replace("、", ",");
+    s.replace("；", ";");
+    s.replace("：", ":");
+    s.replace("，", ",");
+    s.replace("。", ".");
+    s.replace("？", "?");
+    s.replace("！", "!");
+    s.replace("　", " ");
+    s.trim();
 }
 
 bool ApiClient::doChat(const char* sysPrompt, const String& userPrompt,
@@ -126,32 +180,64 @@ bool ApiClient::doChat(const char* sysPrompt, const String& userPrompt,
     return true;
 }
 
-bool ApiClient::fetchFortune(Fortune& out) {
-    const char* sys =
+bool ApiClient::fetchFortune(ResponseLanguage lang, Fortune& out) {
+    const char* sysChinese =
+        "You are a Chinese fortune-teller life coach for an arcade-style oracle device. "
+        "Return STRICT JSON only, no markdown, no code fences, no extra text. "
+        "Schema: {\"mood\":\"<one of: lucky, warning, calm, bold, love>\",\"text\":\"<one Simplified Chinese motivational sentence, max 28 Chinese characters, no quotes>\"}. "
+        "Pick mood to match the vibe of the text. Keep text vivid, concise, and easy to read on a tiny screen. "
+        "Use only very common Simplified Chinese characters. Avoid rare/literary characters and uncommon idioms. "
+        "Use only these punctuation marks if needed: , . ? ! ; : "
+        "Each call must produce a FRESH, DIFFERENT sentence; never repeat generic fortune-cookie phrasing.";
+
+    const char* sysEnglish =
         "You are a fortune-teller life coach for an arcade-style oracle device. "
         "Return STRICT JSON only, no markdown, no code fences, no extra text. "
         "Schema: {\"mood\":\"<one of: lucky, warning, calm, bold, love>\",\"text\":\"<one motivational sentence, max 18 words, no quotes>\"}. "
-        "Pick mood to match the vibe of the text. Keep text vivid and poetic. "
-        "Each call must produce a FRESH, DIFFERENT sentence — never repeat phrasing, "
-        "imagery, or themes from generic fortune-cookie templates. Surprise the reader.";
-    return doChat(sys, buildUserPrompt(), /*expectMood=*/true, out);
+        "Pick mood to match the vibe of the text. Keep text vivid, poetic, concise, and easy to read on a tiny screen. "
+        "Each call must produce a FRESH, DIFFERENT sentence; never repeat generic fortune-cookie phrasing.";
+
+    const char* sys = (lang == ResponseLanguage::CHINESE) ? sysChinese : sysEnglish;
+    bool ok = doChat(sys, buildUserPrompt(lang), /*expectMood=*/true, out);
+    if (ok && lang == ResponseLanguage::CHINESE) normalizeChinesePunctuation(out.text);
+    return ok;
 }
 
-bool ApiClient::fetchTruthQuestion(bool isMale, Fortune& out) {
-    const char* sys =
+bool ApiClient::fetchTruthQuestion(bool isMale, ResponseLanguage lang, Fortune& out) {
+    const char* sysChinese =
+        "You generate Simplified Chinese Truth-or-Dare questions for a portable arcade device, "
+        "but ONLY 'truth' questions (never dare). Return STRICT JSON only, no "
+        "markdown, no code fences, no extra text. Schema: {\"text\":\"<one Simplified Chinese truth "
+        "question, max 30 Chinese characters, no quotes>\"}. The question is for casual play "
+        "between male and female friends to warm up conversation; flirty-but-"
+        "respectful is welcome, can be playful or mildly spicy, but never "
+        "explicit/NSFW. Use only very common Simplified Chinese characters. Avoid rare/literary characters and uncommon idioms. "
+        "Use only these punctuation marks if needed: , . ? ! ; : "
+        "Each call must produce a FRESH, DIFFERENT question; "
+        "no clichés, surprise the reader.";
+
+    const char* sysEnglish =
         "You generate Truth-or-Dare questions for a portable arcade device, "
         "but ONLY 'truth' questions (never dare). Return STRICT JSON only, no "
         "markdown, no code fences, no extra text. Schema: {\"text\":\"<one truth "
         "question, max 22 words, no quotes>\"}. The question is for casual play "
-        "between male and female friends to warm up conversation — flirty-but-"
+        "between male and female friends to warm up conversation; flirty-but-"
         "respectful is welcome, can be playful or mildly spicy, but never "
-        "explicit/NSFW. Each call must produce a FRESH, DIFFERENT question — "
+        "explicit/NSFW. Each call must produce a FRESH, DIFFERENT question; "
         "no clichés, surprise the reader.";
-    String userPrompt = String("The player just spun and got: ") +
-                        (isMale ? "MALE" : "FEMALE") +
-                        ". Ask one truth question tailored to that. [seed:" +
-                        (uint32_t)esp_random() + "]";
+
+    const bool chinese = (lang == ResponseLanguage::CHINESE);
+    const char* sys = chinese ? sysChinese : sysEnglish;
+    String userPrompt = chinese
+        ? (String("玩家抽到：") + (isMale ? "男生" : "女生") +
+           "。请生成一个符合这个身份的中文真心话问题。[seed:")
+        : (String("The player just spun and got: ") + (isMale ? "MALE" : "FEMALE") +
+           ". Ask one truth question in English tailored to that. [seed:");
+    userPrompt += (uint32_t)esp_random();
+    userPrompt += "]";
     // Default mascot mood: BOLD for male, LOVE for female.
     out.mood = isMale ? Mood::BOLD : Mood::LOVE;
-    return doChat(sys, userPrompt, /*expectMood=*/false, out);
+    bool ok = doChat(sys, userPrompt, /*expectMood=*/false, out);
+    if (ok && chinese) normalizeChinesePunctuation(out.text);
+    return ok;
 }

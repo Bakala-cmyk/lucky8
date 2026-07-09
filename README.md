@@ -42,12 +42,13 @@ LLM 在返回文本时附带 `mood`，驱动 DISPLAYING 阶段的 jingle + 右�
 - **吃豆人街机主题** — 全 5 个状态都有主题专属动画 + 音效
 - **按语境变化的背景音** — LLM 同时返回 mood，驱动不同 jingle + 配角 sprite
 - **逐字打字机 + 逐行吞字** — 文字逐字出现，结束后 Pac-Man 一行一行从右往左吃光
+- **中文 UTF-8 展示** — API 文本使用 U8g2 + 文泉驿 16px GB2312 字体渲染，支持中文/英文混排、换行、滚动和吞字
 - **摇晃触发** — 50 Hz 轮询 MPU6886，`|a|-1g > 1.8g` 持续 300 ms 触发，5 s 冷却
 - **按钮兜底** — BtnA 代替摇晃；DISPLAYING 中按 A 直接跳到吞字阶段
 - **非阻塞网络** — WiFi 连接 + HTTPS 请求在核心 0 的 FreeRTOS task 执行，核心 1 动画不卡
 - **双缓冲渲染** — 240×135 sprite 整屏先画再一次性 push，无闪烁
 - **运势永远新鲜** — 随机 nonce + 高温采样 + 扩展 prompt 池，从设备侧根除重复
-- **离线可构建** — `lib/` 下 vendor `M5StickCPlus` + `ArduinoJson`，`pio run` 不走网络
+- **离线可构建** — `lib/` 下 vendor `M5StickCPlus` + `ArduinoJson` + `U8g2_for_TFT_eSPI`，`pio run` 不走网络
 - **凭据隔离** — `src/config.h` gitignore，只提交 `config.h.example`
 
 ---
@@ -71,7 +72,7 @@ lucky8/
 │   ├── state_machine.h      # AppState enum
 │   ├── shake_detector.*     # IMU 轮询 + 摇晃算法
 │   ├── api_client.*         # HTTPS + JSON response_format + mood 解析
-│   ├── display_manager.*    # TFT_eSprite 渲染器 + Pac-Man 原语
+│   ├── display_manager.*    # TFT_eSprite 渲染器 + Pac-Man 原语 + UTF-8 中文文字
 │   ├── animations.*         # IdleAnim / ConnectingAnim / LoadingAnim /
 │   │                          DisplayingAnim(TYPING→HOLD→EAT) / ErrorAnim
 │   ├── sound_player.*       # 非阻塞音序器 + 11 段预置旋律
@@ -79,7 +80,8 @@ lucky8/
 │   └── config.h             # 真实凭据（gitignored）
 ├── lib/
 │   ├── M5StickCPlus/        # vendored
-│   └── ArduinoJson/         # vendored
+│   ├── ArduinoJson/         # vendored
+│   └── U8g2_for_TFT_eSPI/   # vendored, UTF-8 Chinese text rendering
 ├── test/README.md           # 分阶段手动测试清单
 ├── plan.md                  # 初版总体设计
 ├── ui_plan.md               # 吃豆人 UI 改造详细计划
@@ -119,6 +121,8 @@ pio device monitor     # 看串口日志（可看到 [API] mood=X text=...）
 
 ### 3. 玩法
 
+- **LANGUAGE**：A 选中文，B 选 English；后续 UI 提示和 API 返回内容都会跟随该语言
+- **MODE**：A 选求签，B 选 Truth
 - **IDLE**：Pac-Man 在底排吃豆，标题交替闪 → **摇一摇** 或按 **A**
 - **CONNECTING**：Pac-Man 追红鬼，连上时快速撞击 + `+100`
 - **LOADING**：能量豆模式，四蓝鬼游走
@@ -132,6 +136,10 @@ DISPLAYING 中按 **A** 会直接跳到吞字阶段，不用等 10 秒。
 ## 状态机
 
 ```
+LANGUAGE_SELECT ──(A 中文 / B English)──► MODE_SELECT
+                                             │
+                              A 求签 / B Truth
+                                             ▼
 IDLE ──(摇晃 / BtnA)──► CONNECTING
                               │
                     WiFi OK ──┤── WiFi 失败 ──► ERROR
